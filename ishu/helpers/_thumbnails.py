@@ -368,24 +368,31 @@ class Thumbnail:
         total = getattr(song, "duration_sec", None) or 0
         cur = getattr(song, "time", None) or 0
 
-        if total and cur:
+        if total > 0:
             progress = min(max(cur / total, 0.0), 1.0)
         else:
-            progress = 0.35
+            progress = 0.0
 
         played_x = bar_x1 + int((bar_x2 - bar_x1) * progress)
 
         # Progress background and fill
         d.rounded_rectangle((bar_x1, bar_y, bar_x2, bar_y + 8), radius=4, fill=(185, 185, 185, 120))
-        d.rounded_rectangle((bar_x1, bar_y, played_x, bar_y + 8), radius=4, fill=color_mid)
+        if played_x > bar_x1:
+            d.rounded_rectangle((bar_x1, bar_y, played_x, bar_y + 8), radius=4, fill=color_mid)
         d.ellipse((played_x - 10, bar_y - 6, played_x + 14, bar_y + 14), fill=(255, 255, 255))
 
         # Playback time labels
-        time_played = _fmt(cur) if cur else "00:00"
-        if len(time_played.split(":")[0]) == 1:
-            time_played = "0" + time_played
-            
+        time_played = _fmt(cur or 0)
         time_total = song.duration or _fmt(total) or "0:00"
+
+        # Format start duration to match minute padding of time_total
+        if time_total and ":" in time_total:
+            total_min_len = len(time_total.split(":")[0])
+            played_min = time_played.split(":")[0]
+            if total_min_len == 2 and len(played_min) == 1:
+                time_played = "0" + time_played
+            elif total_min_len == 1 and len(played_min) == 2 and time_played.startswith("0"):
+                time_played = time_played[1:]
 
         d.text((bar_x1, bar_y + 25), time_played, font=small_font, fill=(210, 210, 210))
         tw = d.textbbox((0, 0), time_total, font=small_font)[2]
@@ -410,8 +417,9 @@ class Thumbnail:
             if not self.session:
                 await self.start()
 
-            temp = f"cache/temp_{song.id}.jpg"
-            output = f"cache/{song.id}.jpg"
+            cur_time = getattr(song, "time", 0) or 0
+            temp = f"cache/temp_{song.id}_{cur_time}.jpg"
+            output = f"cache/{song.id}_{cur_time}.jpg"
 
             if os.path.exists(output):
                 return output

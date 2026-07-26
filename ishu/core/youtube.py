@@ -209,11 +209,7 @@ async def _cookies_download(link: str, media_type: str) -> str | None:
             return existing
 
         cookie = cookie_txt_file()
-        # Default to the anonymous yt-dlp path: the deploy server IP is 403'd by
-        # googlevideo for signed-in (cookie) requests (logs 2026-07-13), while
-        # the no-cookie download succeeds. Opt IN to cookies with
-        # ALLOW_COOKIE_DOWNLOAD=1 only if anonymous gets bot-flagged.
-        if not cookie or not os.environ.get("ALLOW_COOKIE_DOWNLOAD"):
+        if not cookie:
             return None
 
         try:
@@ -954,7 +950,7 @@ class YouTube:
                     "no_warnings": True,
                 }
                 cookie = cookie_txt_file()
-                if cookie and os.environ.get("ALLOW_COOKIE_DOWNLOAD"):
+                if cookie:
                     opts["cookiefile"] = cookie
                 with yt_dlp.YoutubeDL(_with_js_runtime(opts)) as ydl:
                     info = ydl.extract_info(link, download=False) or {}
@@ -1028,9 +1024,7 @@ class YouTube:
         # normal play doesn't pay for a glob + 30s-bound extract attempt that
         # the flagged IP will only reject anyway.
         cookie = cookie_txt_file()
-        use_cookies = bool(cookie) and (
-            force_cookies or os.environ.get("ALLOW_COOKIE_DOWNLOAD")
-        )
+        use_cookies = bool(cookie)
 
         # ── Method 1: yt-dlp stream-URL extract (anonymous or cookie) ────────
         try:

@@ -41,13 +41,13 @@
             "required": true
         },
         "RAILWAY_YT_API_URL": {
-            "description": "Railway self-hosted YouTube API URL",
-            "value": "https://youtube-api-music-production-77fb.up.railway.app",
+            "description": "Self-hosted YouTube API URL",
+            "value": "https://apihub-cebe91de7ae2.herokuapp.com",
             "required": false
         },
         "RAILWAY_YT_API_KEY": {
-            "description": "Railway self-hosted YouTube API Key",
-            "value": "jd7hSNs6ilyVu4i~EkFx4_yONJhz.5bx",
+            "description": "Self-hosted YouTube API Key",
+            "value": "lily_mOVOd9TG7zuE4L9QDxEndbiyjQc9he",
             "required": false
         }
     }

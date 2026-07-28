@@ -36,6 +36,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 # Copy dependency spec and install Python deps first (layer caching)
 COPY pyproject.toml ./
 RUN uv sync --no-dev
+ENV PATH="/app/.venv/bin:${PATH}"
 
 # Copy the rest of the project
 COPY . .

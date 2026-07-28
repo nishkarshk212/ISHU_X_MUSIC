@@ -4,6 +4,7 @@
 
 
 import asyncio
+import re
 from pathlib import Path
 
 from ntgcalls import (ConnectionNotFound, TelegramServerError,
@@ -16,6 +17,7 @@ from pytgcalls.pytgcalls_session import PyTgCallsSession
 
 from ishu import (app, config, db, lang, logger,
                    queue, thumb, userbot, yt)
+from ishu.core.youtube import YouTube, set_dl_context
 from ishu.helpers import Media, Track, buttons, utils
 
 
@@ -183,7 +185,7 @@ class TgCall(PyTgCalls):
                 await client.play(
                     chat_id=chat_id,
                     stream=stream,
-                    config=types.GroupCallConfig(auto_start=False),
+                    config=types.GroupCallConfig(auto_start=True),
                 )
                 stream_success = True
 
@@ -198,11 +200,26 @@ class TgCall(PyTgCalls):
 
         # ── Step 3: Fallback — download then play ─────────────────────────────
         if not stream_success and isinstance(media, Track):
+            set_dl_context(
+                chat_id=chat_id,
+                chat_title=getattr(message.chat, "title", None),
+                title=media.title,
+                video=media.video,
+            )
             media.file_path = await yt.download(media.id, video=media.video)
             media_path = media.file_path
 
         if not media_path:
             await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
+            if isinstance(media, Track):
+                await utils.error_log(
+                    context="Stream URL + Download both failed",
+                    error="No media source could be resolved (all download methods returned None).",
+                    chat_id=chat_id,
+                    chat_title=getattr(message.chat, "title", None),
+                    title=media.title,
+                    video=media.video,
+                )
             return await self.play_next(chat_id)
 
         try:
@@ -222,12 +239,13 @@ class TgCall(PyTgCalls):
                 await client.play(
                     chat_id=chat_id,
                     stream=stream,
-                    config=types.GroupCallConfig(auto_start=False),
+                    config=types.GroupCallConfig(auto_start=True),
                 )
 
             if not seek_time:
                 media.time = 1
                 await db.add_call(chat_id)
+                _remember(chat_id, getattr(media, "id", None), getattr(media, "title", None))
 
                 # Shorten title to 50 characters max
                 short_title = media.title.split("|")[0].split("(")[0].strip()
@@ -260,23 +278,18 @@ class TgCall(PyTgCalls):
                 media.message_id = message.id
 
         except FileNotFoundError:
-            await utils.error_log(f"{chat_id}:play_media[{media.id}]", "FileNotFoundError (source gone)")
             await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
             await self.play_next(chat_id)
         except exceptions.NoActiveGroupCall:
-            await utils.error_log(f"{chat_id}:play_media", "NoActiveGroupCall")
             await self.stop(chat_id)
             await message.edit_text(_lang["error_no_call"])
         except exceptions.NoAudioSourceFound:
-            await utils.error_log(f"{chat_id}:play_media[{media.id}]", "NoAudioSourceFound")
             await message.edit_text(_lang["error_no_audio"])
             await self.play_next(chat_id)
-        except (ConnectionError, ConnectionNotFound, TelegramServerError) as e:
-            await utils.error_log(f"{chat_id}:play_media", e)
+        except (ConnectionError, ConnectionNotFound, TelegramServerError):
             await self.stop(chat_id)
             await message.edit_text(_lang["error_tg_server"])
         except RTMPStreamingUnsupported:
-            await utils.error_log(f"{chat_id}:play_media", "RTMPStreamingUnsupported")
             await self.stop(chat_id)
             await message.edit_text(_lang["error_rtmp"])
 
@@ -529,9 +542,6 @@ class TgCall(PyTgCalls):
                             logger.warning(
                                 "Auto-reconnect failed for %s: %s",
                                 update.chat_id, e,
-                            )
-                            await utils.error_log(
-                                f"{update.chat_id}:auto_reconnect[{media.id}]", e
                             )
                     await self.stop(update.chat_id)
 

@@ -87,18 +87,24 @@ class Inline:
             # SUCCESS — SUCCESS is the green one. (POSITIVE/NEGATIVE don't exist.)
             # Label per user request: small-caps "ᴀᴜᴛᴏᴘʟᴀʏ" + ♾ (U+267E) when on.
             if autoplay:
-                mode_label = {"vibe": "🎧 Vibe", "artist": "🎤 Artist", "trending": "🔥 Trending"}.get(mode or "vibe", "🎧 Vibe")
+                mode_info = {
+                    "vibe": ("Vibe", "5316553657087435063"),
+                    "artist": ("Artist", "5233578612665375810"),
+                    "trending": ("Trending", "5317058732356542197"),
+                }.get(mode or "vibe", ("Vibe", "5316553657087435063"))
                 keyboard.append(
                     [
                         self.ikb(
                             text="ᴀᴜᴛᴏᴘʟᴀʏ ♾",
                             callback_data=f"autoplay {chat_id}",
                             style=enums.ButtonStyle.SUCCESS,
+                            icon_custom_emoji_id="5199785165735367039",
                         ),
                         self.ikb(
-                            text=f"📻 {mode_label}",
+                            text=f"📻 {mode_info[0]}",
                             callback_data=f"autoplay_mode {chat_id}",
                             style=enums.ButtonStyle.PRIMARY,
+                            icon_custom_emoji_id=mode_info[1],
                         ),
                     ]
                 )

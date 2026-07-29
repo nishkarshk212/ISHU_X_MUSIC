@@ -34,6 +34,7 @@ class Inline:
         timer: str = None,
         remove: bool = False,
         autoplay: bool | None = None,
+        mode: str = None,
     ) -> types.InlineKeyboardMarkup:
         # Reuse the last-known rows for any dimension not explicitly passed,
         # so a single-row update (timer tick OR autoplay toggle) preserves the
@@ -48,6 +49,10 @@ class Inline:
             # explicit False (toggle OFF) must win, so only fall back on None.
             if autoplay is None and not remove:
                 autoplay = prev.get("autoplay", False)
+            if mode is None:
+                mode = prev.get("mode", "vibe")
+        if mode is None:
+            mode = "vibe"
 
         keyboard = []
         if status:
@@ -114,6 +119,7 @@ class Inline:
             "status": status,
             "timer": timer,
             "autoplay": autoplay,
+            "mode": mode,
             "remove": remove,
         }
         return self.ikm(keyboard)

@@ -88,10 +88,10 @@ class Inline:
             # Label per user request: small-caps "ᴀᴜᴛᴏᴘʟᴀʏ" + ♾ (U+267E) when on.
             if autoplay:
                 mode_info = {
-                    "vibe": ("Vibe", "5316553657087435063"),
-                    "artist": ("Artist", "5233578612665375810"),
-                    "trending": ("Trending", "5317058732356542197"),
-                }.get(mode or "vibe", ("Vibe", "5316553657087435063"))
+                    "vibe": ("Vibe", "5316553657087435063", enums.ButtonStyle.PRIMARY),
+                    "artist": ("Artist", "5233578612665375810", enums.ButtonStyle.DANGER),
+                    "trending": ("Trending", "5317058732356542197", enums.ButtonStyle.SUCCESS),
+                }.get(mode or "vibe", ("Vibe", "5316553657087435063", enums.ButtonStyle.PRIMARY))
                 keyboard.append(
                     [
                         self.ikb(
@@ -101,9 +101,9 @@ class Inline:
                             icon_custom_emoji_id="5199785165735367039",
                         ),
                         self.ikb(
-                            text=f"📻 {mode_info[0]}",
+                            text=mode_info[0],
                             callback_data=f"autoplay_mode {chat_id}",
-                            style=enums.ButtonStyle.PRIMARY,
+                            style=mode_info[2],
                             icon_custom_emoji_id=mode_info[1],
                         ),
                     ]

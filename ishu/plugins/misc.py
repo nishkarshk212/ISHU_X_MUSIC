@@ -5,11 +5,125 @@
 
 import time
 import asyncio
+from pathlib import Path
 
 from pyrogram import enums, errors, filters, types
 
-from ishu import anon, app, config, db, lang, queue, tasks, userbot, yt
+from ishu import anon, app, config, db, lang, logger, queue, tasks, userbot, yt
 from ishu.helpers import buttons
+
+
+def _in_use_media_ids() -> set[str]:
+    """Collect every video_id currently referenced by an active queue so the
+    cleanup task never deletes a file that is mid-playback or about to play."""
+    ids: set[str] = set()
+    for chat_id in list(db.active_calls):
+        for item in queue.get_queue(chat_id):
+            vid = getattr(item, "id", None)
+            if vid:
+                ids.add(vid)
+    return ids
+
+
+async def auto_cleanup():
+    """Periodically reclaim disk space by deleting orphaned cached media.
+
+    A disk that fills up is the most common *silent* cause of the bot slowing
+    down: yt-dlp / ffmpeg write ``.part`` and ``.orig.mp3`` temp files, and
+    once free space is gone those writes start failing (download stalls, then
+    playback stalls). This task only purges files that are NOT referenced by
+    any active or queued stream, and only once free space drops under
+    CLEANUP_DISK_THRESHOLD% — so a healthy disk is left completely alone.
+    """
+    last_alert = 0.0
+    while True:
+        await asyncio.sleep(config.CLEANUP_INTERVAL)
+
+        try:
+            free = psutil_disk_free_percent()
+        except Exception as ex:
+            logger.warning("auto_cleanup: disk check failed: %s", ex)
+            continue
+
+        threshold = config.CLEANUP_DISK_THRESHOLD
+        if free >= threshold:
+            continue
+
+        in_use = _in_use_media_ids()
+        deleted = 0
+        freed_bytes = 0
+
+        # ── downloads/ : delete orphaned media (keep .part of active dl) ──────
+        dldir = Path("downloads")
+        if dldir.is_dir():
+            for f in dldir.iterdir():
+                if not f.is_file():
+                    continue
+                # Never touch in-progress download temp files.
+                if f.name.endswith(".part") or f.name.endswith(".orig.mp3"):
+                    continue
+                # Keep files that belong to an active/queued track.
+                stem = f.stem  # e.g. "dQw4w9WgXcQ.mp3" -> "dQw4w9WgXcQ"
+                if stem in in_use:
+                    continue
+                try:
+                    freed_bytes += f.stat().st_size
+                    f.unlink()
+                    deleted += 1
+                except Exception:
+                    pass
+
+        # ── cache/ : delete orphaned thumbnails only ─────────────────────────
+        cachedir = Path("cache")
+        if cachedir.is_dir():
+            for f in cachedir.glob("*.jpg"):
+                # Keep font + transient temp files; only prune finished thumbs.
+                if f.name.startswith("temp_") or f.name in ("font.ttf", "font2.ttf"):
+                    continue
+                stem = f.stem  # "dQw4w9WgXcQ.jpg" -> "dQw4w9WgXcQ"
+                if stem in in_use:
+                    continue
+                try:
+                    freed_bytes += f.stat().st_size
+                    f.unlink()
+                    deleted += 1
+                except Exception:
+                    pass
+
+        freed_mb = freed_bytes / (1024 * 1024)
+        logger.info(
+            "auto_cleanup: freed %d orphaned file(s) (%.1f MB); disk free now %.1f%%",
+            deleted,
+            freed_mb,
+            psutil_disk_free_percent(),
+        )
+
+        now = time.time()
+        # Alert the log group only if still low AND we haven't alerted recently.
+        if psutil_disk_free_percent() < threshold and (now - last_alert) > 21600:
+            last_alert = now
+            try:
+                await app.send_message(
+                    chat_id=app.logger,
+                    text=(
+                        f"⚠️ <b>Disk space low</b>\n\n"
+                        f"Bot: <b>{app.name}</b>\n"
+                        f"Free: <code>{psutil_disk_free_percent():.1f}%</code> "
+                        f"(threshold {threshold}%)\n"
+                        f"Cleaned: {deleted} orphaned file(s), {freed_mb:.1f} MB\n\n"
+                        f"If this keeps recurring, bump CLEANUP_DISK_THRESHOLD "
+                        f"or scale the volume."
+                    ),
+                )
+            except Exception as ex:
+                logger.warning("auto_cleanup: alert send failed: %s", ex)
+
+
+def psutil_disk_free_percent() -> float:
+    import psutil
+
+    return psutil.disk_usage("/").percent
+
 
 
 @app.on_message(filters.video_chat_started, group=19)
@@ -67,6 +181,9 @@ async def update_timer(length=10, sleep=5):
             try:
                 media = queue.get_current(chat_id)
                 if not media:
+                    continue
+                from ishu.helpers._inline import _panel_state
+                if _panel_state.get(chat_id, {}).get("menu_open"):
                     continue
                 duration, message_id = media.duration_sec, media.message_id
                 if not duration or not message_id or not media.time:
@@ -138,3 +255,5 @@ if config.AUTO_LEAVE:
     tasks.append(asyncio.create_task(auto_leave()))
 tasks.append(asyncio.create_task(track_time()))
 tasks.append(asyncio.create_task(update_timer()))
+if config.AUTO_CLEANUP:
+    tasks.append(asyncio.create_task(auto_cleanup()))

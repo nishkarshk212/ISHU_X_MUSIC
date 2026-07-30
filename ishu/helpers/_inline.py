@@ -152,6 +152,7 @@ class Inline:
                     text="🎵 Songs",
                     callback_data=f"yt_cat songs {chat_id}",
                     style=enums.ButtonStyle.PRIMARY,
+                    icon_custom_emoji_id="5321505140199418151",
                 ),
                 self.ikb(
                     text="🎤 Artists",
@@ -165,11 +166,13 @@ class Inline:
                     text="💿 Albums",
                     callback_data=f"yt_cat albums {chat_id}",
                     style=enums.ButtonStyle.PRIMARY,
+                    icon_custom_emoji_id="5462956611033117422",
                 ),
                 self.ikb(
                     text="📑 Playlists",
                     callback_data=f"yt_cat playlists {chat_id}",
                     style=enums.ButtonStyle.SUCCESS,
+                    icon_custom_emoji_id="6007817446398890097",
                 ),
             ],
             [
@@ -177,6 +180,7 @@ class Inline:
                     text="🎬 Music Videos",
                     callback_data=f"yt_cat videos {chat_id}",
                     style=enums.ButtonStyle.DANGER,
+                    icon_custom_emoji_id="5366477429223209600",
                 ),
             ],
         ]

@@ -176,11 +176,11 @@ async def _youtube_menu_cb(_, query: types.CallbackQuery):
     menu_text = (
         "<b><emoji id=5321505140199418151>🔴</emoji> YouTube Music Category & Filter Options:</b>\n\n"
         "Select a section to browse & stream Indian music:\n"
-        "• 🎵 <b>Songs</b> — High Quality Audio Hits\n"
-        "• 🎤 <b>Artists</b> — Popular Indian Artists\n"
-        "• 💿 <b>Albums</b> — Official Music Albums\n"
-        "• 📑 <b>Playlists</b> — Top Indian Charts & Mixes\n"
-        "• 🎬 <b>Music Videos</b> — Official HD Music Videos"
+        "• <emoji id=5321505140199418151>🎵</emoji> <b>Songs</b> — High Quality Audio Hits\n"
+        "• <emoji id=5233578612665375810>🎤</emoji> <b>Artists</b> — Popular Indian Artists\n"
+        "• <emoji id=5462956611033117422>💿</emoji> <b>Albums</b> — Official Music Albums\n"
+        "• <emoji id=6007817446398890097>📑</emoji> <b>Playlists</b> — Top Indian Charts & Mixes\n"
+        "• <emoji id=5366477429223209600>🎬</emoji> <b>Music Videos</b> — Official HD Music Videos"
     )
     await query.answer("YouTube Music Category Options")
     try:

@@ -121,9 +121,8 @@ class Scheduler:
         self._tasks: list[asyncio.Task] = []
 
     async def start(self) -> None:
-        self._tasks.append(asyncio.create_task(_daily_restart_loop()))
         self._tasks.append(asyncio.create_task(_cleanup_loop()))
-        logger.info("Scheduler started (daily restart + cleanup).")
+        logger.info("Scheduler started (periodic cleanup).")
 
     async def stop(self) -> None:
         for t in self._tasks:

@@ -41,12 +41,6 @@ class Config:
         self.AUTO_END: bool = getenv("AUTO_END", "False").lower() == "true"
 
         # ── Daily restart + cleanup (keep playback fast, clear stale URLs) ──
-        # Bot does a clean self-restart once per day at this local hour:minute
-        # (24h clock). Clearing cache/ + downloads/ every day drops the stale
-        # googlevideo URLs and disk clutter that make the bot slow over time.
-        # Default -1 (disabled).
-        self.RESTART_HOUR = int(getenv("RESTART_HOUR", "-1"))
-        self.RESTART_MIN = int(getenv("RESTART_MIN", "0"))
 
         # Periodic prune of cache/ + downloads/ so accumulated files don't slow
         # the bot down. Interval = how often to scan (minutes, default 60).

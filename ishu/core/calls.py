@@ -239,7 +239,7 @@ class TgCall(PyTgCalls):
                 title=media.title,
                 video=media.video,
             )
-            media.file_path = await yt.download(media.id, video=media.video)
+            media.file_path = await yt.download(media.id, video=media.video, force_cold_file=True)
             media_path = media.file_path
 
         if not media_path:
@@ -274,11 +274,15 @@ class TgCall(PyTgCalls):
                     stream=stream,
                     config=types.GroupCallConfig(auto_start=True),
                 )
+        except Exception as e:
+            logger.error("Final playback failed for %s: %s", getattr(media, "id", "?"), e)
+            await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
+            return await self.play_next(chat_id)
 
-            if not seek_time:
-                media.time = 1
-                await db.add_call(chat_id)
-                _remember(chat_id, getattr(media, "id", None), getattr(media, "title", None))
+        if not seek_time:
+            media.time = 1
+            await db.add_call(chat_id)
+            _remember(chat_id, getattr(media, "id", None), getattr(media, "title", None))
 
                 # Shorten title to 50 characters max
                 short_title = media.title.split("|")[0].split("(")[0].strip()

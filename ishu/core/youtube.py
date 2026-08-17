@@ -466,101 +466,45 @@ async def _railway_download(video_id: str, media_type: str) -> str | None:
         "X-API-Key": str(RAILWAY_YT_API_KEY),
     }
 
-    # Step 1: Extract CDN URL via /audio or /video endpoint (fast JSON, no 30s timeout risk)
-    extract_endpoint = "video" if media_type == "video" else "audio"
-    extract_url = f"{RAILWAY_YT_API_URL}/{extract_endpoint}?id={video_id}"
-    cdn_url = None
+    endpoints = ["play/video/hq", "play/video"] if media_type == "video" else ["play/audio"]
 
     try:
         session = _get_http_session()
-        async with session.get(
-            extract_url,
-            headers=api_headers,
-            timeout=aiohttp.ClientTimeout(total=20),
-        ) as resp:
-            if resp.status == 200:
-                import json as _json
-                data = await resp.json(content_type=None)
-                # Extract best audio/video CDN URL from response
-                if media_type == "audio":
-                    audio_data = data.get("audio", {})
-                    streams = audio_data.get("audio_streams") or []
-                    best = next((s for s in streams if s.get("url")), None)
-                    cdn_url = (best or {}).get("url") or audio_data.get("stream_url") or audio_data.get("audio_stream_url")
-                else:
-                    video_data = data.get("video", {})
-                    streams = video_data.get("formats") or video_data.get("video_streams") or []
-                    best = next((s for s in reversed(streams) if s.get("url")), None)
-                    cdn_url = (best or {}).get("url") or video_data.get("stream_url")
-    except Exception as ex_err:
-        logger.warning("Railway YT API extract failed for %s: %s", video_id, ex_err)
+        for endpoint in endpoints:
+            media_url = f"{RAILWAY_YT_API_URL}/{endpoint}?id={video_id}"
+            try:
+                async with session.get(
+                    media_url,
+                    headers=api_headers,
+                    timeout=aiohttp.ClientTimeout(total=timeout_dl),
+                    allow_redirects=True,
+                ) as file_resp:
+                    if file_resp.status != 200:
+                        logger.warning(
+                            "Railway YT API stream failed: status %s for %s",
+                            file_resp.status, endpoint,
+                        )
+                        continue
+                    with open(file_path, "wb") as fobj:
+                        async for chunk in file_resp.content.iter_chunked(512 * 1024):
+                            fobj.write(chunk)
+                    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+                        _evict_disk_cache()
+                        logger.info("Railway YT API ✓ %s → %s", video_id, file_path)
+                        return file_path
+            except Exception as ep_err:
+                logger.warning("Railway YT API endpoint %s failed for %s: %s", endpoint, video_id, ep_err)
 
-    if not cdn_url:
-        # Fallback: try old /play/audio streaming (may hit 30s H12 on publicapi/apihub)
-        fallback_endpoints = ["play/video/hq", "play/video"] if media_type == "video" else ["play/audio"]
-        try:
-            for endpoint in fallback_endpoints:
-                media_url = f"{RAILWAY_YT_API_URL}/{endpoint}?id={video_id}"
-                try:
-                    async with session.get(
-                        media_url,
-                        headers=api_headers,
-                        timeout=aiohttp.ClientTimeout(total=timeout_dl),
-                        allow_redirects=True,
-                    ) as file_resp:
-                        if file_resp.status != 200:
-                            logger.warning(
-                                "Railway YT API stream failed: status %s for %s",
-                                file_resp.status, endpoint,
-                            )
-                            continue
-                        with open(file_path, "wb") as fobj:
-                            async for chunk in file_resp.content.iter_chunked(512 * 1024):
-                                fobj.write(chunk)
-                        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-                            _evict_disk_cache()
-                            logger.info("Railway YT API fallback-stream ✓ %s → %s", video_id, file_path)
-                            return file_path
-                except Exception as ep_err:
-                    logger.warning("Railway YT API stream endpoint %s failed for %s: %s", endpoint, video_id, ep_err)
-        except Exception:
-            pass
         return None
 
-    # Step 2: Download directly from Google CDN (no 30s limit, parallel chunks)
-    cdn_headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "*/*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://www.youtube.com/",
-        "Origin": "https://www.youtube.com",
-    }
-    try:
-        async with session.get(
-            cdn_url,
-            headers=cdn_headers,
-            timeout=aiohttp.ClientTimeout(total=timeout_dl),
-            allow_redirects=True,
-        ) as cdn_resp:
-            if cdn_resp.status not in (200, 206):
-                logger.warning("Railway CDN direct download failed: status %s for %s", cdn_resp.status, video_id)
-                return None
-            with open(file_path, "wb") as fobj:
-                async for chunk in cdn_resp.content.iter_chunked(1024 * 1024):
-                    fobj.write(chunk)
-        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-            _evict_disk_cache()
-            logger.info("Railway CDN direct download ✓ %s → %s", video_id, file_path)
-            return file_path
-    except Exception as cdn_err:
-        logger.warning("Railway CDN direct download failed for %s: %s", video_id, cdn_err)
+    except Exception as exc:
+        logger.warning("Railway YT API download failed for %s: %s", video_id, exc)
         try:
             if os.path.exists(file_path):
                 os.remove(file_path)
         except OSError:
             pass
-
-    return None
+        return None
 
 
 async def _direct_ytdlp_download(video_id: str, media_type: str) -> str | None:

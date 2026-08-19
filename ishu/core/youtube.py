@@ -852,26 +852,17 @@ class YouTube:
                 continue
         return formats_available, link
 
-    # ── Video stream URL (yt-dlp, no download) ────────────────────────────────
+    # ── Video stream URL (Railway YT API) ────────────────────────────────────
     async def video(self, link: str, videoid: Union[bool, str] = None):
         if videoid:
             link = self.base + link
-        link = _normalize_youtube_link(link)
-        proc = await asyncio.create_subprocess_exec(
-            "yt-dlp", "--js-runtimes", "node", "-g",
-            "-f", "best[height<=?720][width<=?1280]", link,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
-            return 0, "yt-dlp video extract timed out"
-        if stdout:
-            return 1, stdout.decode().split("\n")[0]
-        return 0, stderr.decode()
+        video_id = _extract_video_id(link) or link
+        raced_url = await _race_api_stream(video_id, "video")
+        if raced_url:
+            return 1, raced_url
+        if RAILWAY_YT_API_URL:
+            return 1, f"{RAILWAY_YT_API_URL}/play/video/hq?id={video_id}"
+        return 0, "No API stream available"
 
     async def get_related(self, video_id: str, message_id: int) -> "Track | None":
         """Return a RELATED Track for autoplay (NOT the same song).

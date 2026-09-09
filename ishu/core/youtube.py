@@ -551,13 +551,98 @@ async def _railway_download(video_id: str, media_type: str) -> str | None:
         return None
 
 
+async def _direct_ytdlp_download(video_id: str, media_type: str) -> str | None:
+    """Fast direct yt-dlp fallback with mobile/TV client bypassing datacenter bot checks."""
+    import sys
+    ext = "mp4" if media_type == "video" else "mp3"
+    file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.{ext}")
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    link = f"https://www.youtube.com/watch?v={video_id}"
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "yt_dlp",
+        "--js-runtimes",
+        "node",
+        "--extractor-args",
+        "youtube:player_client=android,ios,tv,mweb",
+        "-N",
+        "4",
+        "--buffer-size",
+        "1M",
+        "--http-chunk-size",
+        "10M",
+        "--no-playlist",
+        "--no-warnings",
+        "-q",
+        "--socket-timeout",
+        "30",
+        "--retries",
+        "2",
+    ]
+
+    cookie = cookie_txt_file() if "cookie_txt_file" in globals() else None
+    if cookie and os.path.exists(cookie):
+        cmd.extend(["--cookies", cookie])
+
+    if media_type == "video":
+        cmd.extend([
+            "-f", "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+            "--merge-output-format", "mp4",
+        ])
+    else:
+        cmd.extend([
+            "-f", "140/251/ba/18/b/best",
+            "-x",
+            "--audio-format", "mp3",
+            "--audio-quality", "0",
+        ])
+
+    cmd.extend(["-o", os.path.join(DOWNLOAD_DIR, f"{video_id}.%(ext)s"), link])
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=90)
+        resolved = _resolve_downloaded_file(video_id, ext)
+        if resolved:
+            _evict_disk_cache()
+            return resolved
+        logger.warning("Direct yt-dlp download returned no file for %s: %s", video_id, stderr.decode(errors="ignore"))
+    except Exception as e:
+        logger.warning("Direct yt-dlp download failed for %s: %s", video_id, e)
+
+    # If first attempt failed with cookie, retry ONCE without cookie (cookies often trigger bot-detection on datacenter IPs)
+    if cookie and os.path.exists(cookie):
+        try:
+            cmd_nocookie = [arg for arg in cmd if arg != "--cookies" and arg != cookie]
+            proc = await asyncio.create_subprocess_exec(
+                *cmd_nocookie,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=90)
+            resolved = _resolve_downloaded_file(video_id, ext)
+            if resolved:
+                _evict_disk_cache()
+                return resolved
+        except Exception as e2:
+            logger.warning("Direct yt-dlp download (no-cookie retry) failed for %s: %s", video_id, e2)
+
+    return None
+
+
 # ── Main download entrypoint ──────────────────────────────────────────────────
 async def _download_with_fallback(
     link: str,
     media_type: str,
 ) -> tuple[str | None, str]:
     """
-    Download exclusively using Railway YT API (API Racing + direct server download).
+    Download using configured API servers -> fleet fallback API servers -> direct yt-dlp fallback.
     Returns (file_path, downloader_name)
     """
     video_id = _extract_video_id(link) or link
@@ -583,6 +668,19 @@ async def _download_with_fallback(
             if entry not in api_servers:
                 api_servers.append(entry)
 
+    FLEET_FALLBACK_APIS = [
+        ("https://publicapi-v3-d949abed7191.herokuapp.com", "lily_mOVOd9TG7zuE4L9QDxEndbiyjQc9he"),
+        ("https://apihub-v3-9d48fbce0605.herokuapp.com", "lily_mOVOd9TG7zuE4L9QDxEndbiyjQc9he"),
+        ("https://apikey-v3-1854882f97a1.herokuapp.com", "lily_mOVOd9TG7zuE4L9QDxEndbiyjQc9he"),
+        ("https://panda-api-v3-6e9434966ef9.herokuapp.com", "lily_mOVOd9TG7zuE4L9QDxEndbiyjQc9he"),
+        ("https://noah-api-v3-12d3419875af.herokuapp.com", "Noah-LrTinhpR67h7C_HoCGykI9wHARDRJPJVz3TwBSq6wd4"),
+        ("https://titanic-api-v3-01462a8481af.herokuapp.com", "lily_mOVOd9TG7zuE4L9QDxEndbiyjQc9he"),
+        ("https://vbit-api-hub-4d4011c429dd.herokuapp.com", "lily_mOVOd9TG7zuE4L9QDxEndbiyjQc9he"),
+    ]
+    for entry in FLEET_FALLBACK_APIS:
+        if entry not in api_servers:
+            api_servers.append(entry)
+
     endpoint = "play/video/hq" if media_type == "video" else "play/audio"
     session = _get_http_session()
 
@@ -596,7 +694,7 @@ async def _download_with_fallback(
             async with session.get(
                 media_url,
                 headers=headers,
-                timeout=aiohttp.ClientTimeout(total=90),
+                timeout=aiohttp.ClientTimeout(total=35),
                 allow_redirects=True,
             ) as resp:
                 if resp.status == 200:
@@ -612,12 +710,16 @@ async def _download_with_fallback(
         except Exception as e:
             logger.warning("Railway YT API download from %s failed for %s: %s", base_url, video_id, e)
 
-    logger.error("Download failed for: %s via Railway YT API", video_id)
+    # ── Fallback: Direct yt-dlp download ──
+    logger.warning("All API servers failed for %s. Attempting direct yt-dlp fallback...", video_id)
+    direct_res = await _direct_ytdlp_download(video_id, media_type)
+    if direct_res:
+        logger.info("Direct yt-dlp fallback succeeded for %s: %s", video_id, direct_res)
+        return direct_res, "yt-dlp"
+
+    logger.error("Download failed for: %s via all methods (APIs + direct yt-dlp)", video_id)
     await _notify_download_failure(video_id, media_type)
     return None, "none"
-
-
-
 # ── Public helpers (kept for backward compat with play.py / calls.py) ─────────
 async def download_song(link: str, title: str | None = None) -> str | None:
     path, _ = await _download_with_fallback(link, "audio")

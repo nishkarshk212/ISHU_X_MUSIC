@@ -143,6 +143,9 @@ def _clear_old_history(chat_id: int, keep: int = 30) -> None:
             del thist[: len(thist) - keep]
 
 
+# Active now-playing message tracker per chat for clean auto-deletion
+_playing_messages: dict[int, int] = {}
+
 class TgCall(PyTgCalls):
     def __init__(self):
         self.clients = []

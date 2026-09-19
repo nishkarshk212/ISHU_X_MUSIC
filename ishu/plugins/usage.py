@@ -187,7 +187,6 @@ async def usage_handler(_, m: types.Message) -> None:
     await m.reply_text(
         text=text,
         reply_markup=_usage_keyboard("audio"),
-        quote=True,
         disable_web_page_preview=True,
     )
 

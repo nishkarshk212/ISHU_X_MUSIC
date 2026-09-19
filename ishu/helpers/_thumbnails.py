@@ -54,7 +54,7 @@ class Thumbnail:
     async def generate(self, song: Track, size=(1024, 576)) -> str:
         try:
             os.makedirs("cache", exist_ok=True)
-            user_suffix = str(song.user_id) if song.user_id else "anon"
+            user_suffix = str(getattr(song, "user_id", None) or "anon")
             output = f"cache/{song.id}_{user_suffix}.png"
             if os.path.exists(output):
                 return output
@@ -75,15 +75,15 @@ class Thumbnail:
             # Retrieve User Profile Picture
             is_autoplay = getattr(song, "user", None) == "Autoplay"
             user_avatar_path = (
-                f"cache/user_{song.user_id}.jpg"
-                if song.user_id
+                f"cache/user_{getattr(song, 'user_id', None)}.jpg"
+                if getattr(song, "user_id", None)
                 else "cache/user_autoplay.jpg" if is_autoplay
                 else None
             )
             has_user_pfp = False
             if user_avatar_path and os.path.exists(user_avatar_path) and os.path.getsize(user_avatar_path) > 0:
                 has_user_pfp = True
-            elif is_autoplay or song.user_photo or song.user_id:
+            elif is_autoplay or getattr(song, "user_photo", None) or getattr(song, "user_id", None):
                 try:
                     try:
                         from ishu import app, userbot
@@ -108,10 +108,10 @@ class Thumbnail:
                                     break
                             except Exception:
                                 continue
-                    elif song.user_photo:
-                        await app.download_media(song.user_photo, file_name=user_avatar_path)
-                    elif song.user_id:
-                        async for photo in app.get_chat_photos(song.user_id, limit=1):
+                    elif getattr(song, "user_photo", None):
+                        await app.download_media(getattr(song, "user_photo", None), file_name=user_avatar_path)
+                    elif getattr(song, "user_id", None):
+                        async for photo in app.get_chat_photos(getattr(song, "user_id", None), limit=1):
                             await app.download_media(photo.file_id, file_name=user_avatar_path)
                             break
                     if user_avatar_path and os.path.exists(user_avatar_path) and os.path.getsize(user_avatar_path) > 0:

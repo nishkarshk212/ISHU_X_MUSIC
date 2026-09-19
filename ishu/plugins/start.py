@@ -16,7 +16,6 @@ async def _help(_, m: types.Message):
     await m.reply_text(
         text=m.lang["help_menu"],
         reply_markup=buttons.help_markup(m.lang),
-        quote=True,
     )
 
 
@@ -130,21 +129,42 @@ async def start(client, message: types.Message):
 
 
 
-@app.on_message(filters.command(["playmode", "settings"]) & filters.group & ~app.bl_users)
+@app.on_message(filters.command(["playmode", "settings"]) & ~app.bl_users)
 @lang.language()
 async def settings(_, message: types.Message):
+    if message.chat.type == enums.ChatType.PRIVATE:
+        b_un = getattr(app, "username", "") or "bot"
+        return await message.reply_text(
+            "<blockquote><b>⚙️ ɢʀᴏᴜᴘ sᴇᴛᴛɪɴɢs</b>\n"
+            "──────────────────\n"
+            "<b>/settings</b> ɪs ᴏɴʟʏ ᴀᴠᴀɪʟᴀʙʟᴇ ɪɴsɪᴅᴇ <b>ɢʀᴏᴜᴘs</b>.\n\n"
+            "ᴘʟᴇᴀsᴇ ᴜsᴇ ᴛʜɪs ᴄᴏᴍᴍᴀɴᴅ ɪɴ ᴀ ɢʀᴏᴜᴘ ᴡʜᴇʀᴇ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ ᴄᴏɴғɪɢᴜʀᴇ ᴍᴜsɪᴄ & ᴀᴅᴍɪɴ sᴇᴛᴛɪɴɢs.</blockquote>",
+            reply_markup=types.InlineKeyboardMarkup([
+                [
+                    types.InlineKeyboardButton(
+                        text="➕ ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ",
+                        url=f"https://t.me/{b_un}?startgroup=true",
+                    )
+                ]
+            ]),
+            parse_mode=enums.ParseMode.HTML,
+        )
+
     admin_only = await db.get_play_mode(message.chat.id)
     cmd_delete = await db.get_cmd_delete(message.chat.id)
     _language = await db.get_lang(message.chat.id)
+    chat_title = getattr(message.chat, "title", "Chat") or "Chat"
+    settings_template = message.lang.get("start_settings", "<b>{0} Settings</b>\n\nClick the buttons below to change settings.")
+    try:
+        text = settings_template.format(chat_title)
+    except Exception:
+        text = f"<b>{chat_title} Settings</b>\n\nClick the buttons below to change settings."
     await message.reply_text(
-        text=message.lang["start_settings"].format(message.chat.title),
+        text=text,
         reply_markup=buttons.settings_markup(
             message.lang, admin_only, cmd_delete, _language, message.chat.id
         ),
-        quote=True,
     )
-
-
 @app.on_message(filters.new_chat_members, group=7)
 @lang.language()
 async def _new_member(_, message: types.Message):
@@ -227,7 +247,6 @@ async def slash_help(_, message: types.Message):
     await message.reply_text(
         text=message.lang["help_menu"],
         reply_markup=buttons.help_markup(message.lang),
-        quote=True,
     )
 
 

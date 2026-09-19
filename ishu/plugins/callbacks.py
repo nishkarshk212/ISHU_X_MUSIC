@@ -324,6 +324,12 @@ async def _settings_cb(_, query: types.CallbackQuery):
     cmd = query.data.split()
     if len(cmd) == 1:
         return await query.answer()
+    if cmd[1] == "close":
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        return
     await query.answer(query.lang["processing"], show_alert=True)
 
     chat_id = query.message.chat.id

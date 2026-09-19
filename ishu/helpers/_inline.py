@@ -297,29 +297,40 @@ class Inline:
     def settings_markup(
         self, lang: dict, admin_only: bool, cmd_delete: bool, language: str, chat_id: int
     ) -> types.InlineKeyboardMarkup:
+        play_mode_text = "🔒 ᴀᴅᴍɪɴs" if admin_only else "👥 ᴇᴠᴇʀʏᴏɴᴇ"
+        cmd_del_text = "✅ ᴇɴᴀʙʟᴇᴅ" if cmd_delete else "❌ ᴅɪsᴀʙʟᴇᴅ"
+        lang_display = lang_codes.get(language, "English") if isinstance(lang_codes, dict) else "English"
         return self.ikm(
             [
                 [
                     self.ikb(
-                        text=lang["play_mode"] + " ➜", callback_data="settings",
+                        text=lang.get("play_mode", "Play Mode") + " ➜",
+                        callback_data="settings",
                     ),
-                    self.ikb(text=admin_only, callback_data="settings play"),
+                    self.ikb(text=play_mode_text, callback_data="settings play"),
                 ],
                 [
                     self.ikb(
-                        text=lang["cmd_delete"] + " ➜", callback_data="settings",
+                        text=lang.get("cmd_delete", "Command Delete") + " ➜",
+                        callback_data="settings",
                     ),
-                    self.ikb(text=cmd_delete, callback_data="settings delete"),
+                    self.ikb(text=cmd_del_text, callback_data="settings delete"),
                 ],
                 [
                     self.ikb(
-                        text=lang["language"] + " ➜", callback_data="settings",
+                        text=lang.get("language", "Language") + " ➜",
+                        callback_data="settings",
                     ),
-                    self.ikb(text=lang_codes[language], callback_data="language"),
+                    self.ikb(text=lang_display, callback_data="language"),
+                ],
+                [
+                    self.ikb(
+                        text="🗑 ᴄʟᴏsᴇ",
+                        callback_data="settings close",
+                    )
                 ],
             ]
         )
-
     def start_key(
         self, lang: dict, private: bool = False, bot_username: str = None, **kwargs
     ) -> types.InlineKeyboardMarkup:

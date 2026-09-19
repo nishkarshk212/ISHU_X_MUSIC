@@ -372,7 +372,19 @@ class TgCall(PyTgCalls):
             return await self.play_next(chat_id)
 
         if not seek_time:
+            # ── Auto-delete previous playing message in this chat ──
+            prev_msg_id = _playing_messages.pop(chat_id, None)
+            if prev_msg_id and getattr(message, "id", None) and prev_msg_id != message.id:
+                try:
+                    await app.delete_messages(chat_id=chat_id, message_ids=prev_msg_id, revoke=True)
+                    logger.info("Auto-deleted previous playing message %s in chat %s", prev_msg_id, chat_id)
+                except Exception:
+                    pass
+
             media.time = 1
+            if getattr(message, "id", None):
+                media.message_id = message.id
+                _playing_messages[chat_id] = message.id
             await db.add_call(chat_id)
             _remember(chat_id, getattr(media, "id", None), getattr(media, "title", None))
 

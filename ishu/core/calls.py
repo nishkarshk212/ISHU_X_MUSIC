@@ -799,23 +799,33 @@ class TgCall(PyTgCalls):
                 k: v for k, v in self._recent_joins.items() if now - v < 30
             }
 
+        # 1. Resolve user first name / mention
+        first_name = "User"
         try:
             user = await app.get_users(user_id)
-            first_name = escape(user.first_name) if user and user.first_name else "User"
-            mention = f'<a href="tg://user?id={user_id}">{first_name}</a>'
+            if user and user.first_name:
+                first_name = escape(user.first_name)
         except Exception:
-            mention = f'<a href="tg://user?id={user_id}">User</a>'
+            for ub in userbot.clients:
+                try:
+                    user = await ub.get_users(user_id)
+                    if user and user.first_name:
+                        first_name = escape(user.first_name)
+                        break
+                except Exception:
+                    pass
+        mention = f'<a href="tg://user?id={user_id}">{first_name}</a>'
 
+        # 2. Check admin/auth status
+        auth_str = "𝖬𝖾𝗆𝖻𝖾𝗋"
         try:
             admins = await db.get_admins(chat_id)
-            if user_id in app.sudoers or user_id in admins:
+            if user_id in app.sudoers or (admins and user_id in admins):
                 auth_str = "𝖠𝖽𝗆𝗂𝗇"
             elif await db.is_auth(chat_id, user_id):
-                auth_str = "𝖠𝗎𝗍𝗁"
-            else:
-                auth_str = "𝖬𝖾𝗆𝖻𝖾𝗋"
+                auth_str = "𝖠𝗎ᴛ𝗁"
         except Exception:
-            auth_str = "𝖬𝖾𝗆𝖻𝖾𝗋"
+            pass
 
         text = (
             f"<blockquote>#JoinedVc\n"
@@ -824,23 +834,44 @@ class TgCall(PyTgCalls):
             f"ⓘ 𝖠ᴜᴛʜ - {auth_str}</blockquote>"
         )
 
-        # Retrieve or fetch group link for Join VC button
+        # 3. Retrieve or fetch group link for Join VC button
         group_link = self._chat_links.get(chat_id)
         if not group_link:
+            chat = None
             try:
                 chat = await app.get_chat(chat_id)
-                if chat.username:
+            except Exception:
+                for ub in userbot.clients:
+                    try:
+                        chat = await ub.get_chat(chat_id)
+                        if chat:
+                            break
+                    except Exception:
+                        pass
+
+            if chat:
+                if getattr(chat, "username", None):
                     group_link = f"https://t.me/{chat.username}"
-                elif chat.invite_link:
+                elif getattr(chat, "invite_link", None):
                     group_link = chat.invite_link
                 else:
-                    group_link = await app.export_chat_invite_link(chat_id)
-                if group_link:
-                    self._chat_links[chat_id] = group_link
-            except Exception as e:
-                logger.warning(f"Could not get group link for {chat_id}: {e}")
+                    try:
+                        group_link = await app.export_chat_invite_link(chat_id)
+                    except Exception:
+                        for ub in userbot.clients:
+                            try:
+                                group_link = await ub.export_chat_invite_link(chat_id)
+                                if group_link:
+                                    break
+                            except Exception:
+                                pass
+
+            if not group_link:
                 clean_id = str(chat_id).replace("-100", "")
-                group_link = f"https://t.me/c/{clean_id}"
+                group_link = f"https://t.me/c/{clean_id}/1"
+
+            if group_link:
+                self._chat_links[chat_id] = group_link
 
         keyboard = None
         if group_link:
@@ -858,6 +889,8 @@ class TgCall(PyTgCalls):
                 ]
             )
 
+        # 4. Send notification (Try bot first, auto-invite bot if missing, fallback to assistant userbot)
+        sent = None
         try:
             sent = await app.send_message(
                 chat_id=chat_id,
@@ -865,13 +898,44 @@ class TgCall(PyTgCalls):
                 parse_mode=enums.ParseMode.HTML,
                 reply_markup=keyboard,
             )
+        except Exception as bot_err:
+            logger.warning(f"Bot cannot send VC notification in {chat_id} ({bot_err}); attempting assistant fallback...")
+            for ub in userbot.clients:
+                # Attempt to add bot to group so future bot sends work
+                try:
+                    await ub.add_chat_members(chat_id, app.id)
+                    sent = await app.send_message(
+                        chat_id=chat_id,
+                        text=text,
+                        parse_mode=enums.ParseMode.HTML,
+                        reply_markup=keyboard,
+                    )
+                    if sent:
+                        break
+                except Exception:
+                    pass
+
+                # If bot cannot send, send via assistant userbot directly
+                try:
+                    sent = await ub.send_message(
+                        chat_id=chat_id,
+                        text=text,
+                        parse_mode=enums.ParseMode.HTML,
+                        reply_markup=keyboard,
+                    )
+                    if sent:
+                        break
+                except Exception as ub_err:
+                    logger.warning(f"Assistant send failed in {chat_id}: {ub_err}")
+
+        # 5. Auto-delete after 5 seconds
+        if sent:
             await asyncio.sleep(5)
             try:
                 await sent.delete()
             except Exception:
                 pass
-        except Exception as err:
-            logger.warning(f"Failed to send/delete VC join notification in {chat_id}: {err}")
+
 
     async def boot(self) -> None:
         PyTgCallsSession.notice_displayed = True

@@ -1,3 +1,5 @@
+from html import escape
+import time
 from ishu.helpers._play import is_vc_active
 # Copyright (c) 2025 AnonymousX1025
 # Licensed under the MIT License.
@@ -14,7 +16,7 @@ from ntgcalls import (ConnectionNotFound, TelegramServerError,
 from pyrogram import enums
 from pyrogram.errors import (ChatSendMediaForbidden, ChatSendPhotosForbidden,
                              MessageIdInvalid)
-from pyrogram.types import InputMediaPhoto, Message
+from pyrogram.types import (InputMediaPhoto, Message, InlineKeyboardButton, InlineKeyboardMarkup)
 from pytgcalls import PyTgCalls, exceptions, types
 from pytgcalls.pytgcalls_session import PyTgCallsSession
 
@@ -149,6 +151,8 @@ _playing_messages: dict[int, int] = {}
 class TgCall(PyTgCalls):
     def __init__(self):
         self.clients = []
+        self._recent_joins: dict[tuple[int, int], float] = {}
+        self._chat_links: dict[int, str] = {}
 
     async def pause(self, chat_id: int) -> bool:
         client = await db.get_assistant(chat_id)
@@ -769,7 +773,105 @@ class TgCall(PyTgCalls):
                                 update.chat_id, e,
                             )
                     await self.stop(update.chat_id)
+            elif isinstance(update, types.UpdatedGroupCallParticipant):
+                if (
+                    update.action == types.GroupCallParticipant.Action.JOINED
+                    or types.GroupCallParticipant.Action.JOINED in update.action
+                ):
+                    asyncio.create_task(
+                        self.on_participant_joined(update.chat_id, update.participant.user_id)
+                    )
 
+
+    async def on_participant_joined(self, chat_id: int, user_id: int) -> None:
+        assistant_ids = [getattr(ub, "id", None) for ub in userbot.clients]
+        if user_id == getattr(app, "id", None) or user_id in assistant_ids:
+            return
+
+        now = time.time()
+        if (chat_id, user_id) in self._recent_joins:
+            if now - self._recent_joins[(chat_id, user_id)] < 10:
+                return
+        self._recent_joins[(chat_id, user_id)] = now
+
+        if len(self._recent_joins) > 200:
+            self._recent_joins = {
+                k: v for k, v in self._recent_joins.items() if now - v < 30
+            }
+
+        try:
+            user = await app.get_users(user_id)
+            first_name = escape(user.first_name) if user and user.first_name else "User"
+            mention = f'<a href="tg://user?id={user_id}">{first_name}</a>'
+        except Exception:
+            mention = f'<a href="tg://user?id={user_id}">User</a>'
+
+        try:
+            admins = await db.get_admins(chat_id)
+            if user_id in app.sudoers or user_id in admins:
+                auth_str = "𝖠𝖽𝗆𝗂𝗇"
+            elif await db.is_auth(chat_id, user_id):
+                auth_str = "𝖠𝗎𝗍𝗁"
+            else:
+                auth_str = "𝖬𝖾𝗆𝖻𝖾𝗋"
+        except Exception:
+            auth_str = "𝖬𝖾𝗆𝖻𝖾𝗋"
+
+        text = (
+            f"<blockquote>#JoinedVc\n"
+            f"ⓘ 𝖴sᴇʀ - {mention}\n"
+            f"ⓘ 𝖴sᴇʀɪᴅ - <code>{user_id}</code>\n"
+            f"ⓘ 𝖠ᴜᴛʜ - {auth_str}</blockquote>"
+        )
+
+        # Retrieve or fetch group link for Join VC button
+        group_link = self._chat_links.get(chat_id)
+        if not group_link:
+            try:
+                chat = await app.get_chat(chat_id)
+                if chat.username:
+                    group_link = f"https://t.me/{chat.username}"
+                elif chat.invite_link:
+                    group_link = chat.invite_link
+                else:
+                    group_link = await app.export_chat_invite_link(chat_id)
+                if group_link:
+                    self._chat_links[chat_id] = group_link
+            except Exception as e:
+                logger.warning(f"Could not get group link for {chat_id}: {e}")
+                clean_id = str(chat_id).replace("-100", "")
+                group_link = f"https://t.me/c/{clean_id}"
+
+        keyboard = None
+        if group_link:
+            btn_kwargs = {"text": "ᴊᴏɪɴ ᴠᴄ", "url": group_link}
+            if hasattr(enums, "ButtonStyle") and hasattr(enums.ButtonStyle, "SUCCESS"):
+                btn_kwargs["style"] = enums.ButtonStyle.SUCCESS
+            elif hasattr(enums, "SUCCESS"):
+                btn_kwargs["style"] = enums.SUCCESS
+
+            keyboard = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(**btn_kwargs)
+                    ]
+                ]
+            )
+
+        try:
+            sent = await app.send_message(
+                chat_id=chat_id,
+                text=text,
+                parse_mode=enums.ParseMode.HTML,
+                reply_markup=keyboard,
+            )
+            await asyncio.sleep(5)
+            try:
+                await sent.delete()
+            except Exception:
+                pass
+        except Exception as err:
+            logger.warning(f"Failed to send/delete VC join notification in {chat_id}: {err}")
 
     async def boot(self) -> None:
         PyTgCallsSession.notice_displayed = True
